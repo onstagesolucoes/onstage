@@ -9,6 +9,8 @@ __pycache__/
 # arquivos locais
 .env
 .env.*
+credentials.json
+token.json
 
 # arquivos de IDE
 .vscode/
@@ -29,5 +31,8 @@ Thumbs.db
 
 certificados/
 notasfiscais/
-.xlsx
+*.xlsx
 *.pfx
+
+credentials.json
+token.json

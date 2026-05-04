@@ -90,6 +90,14 @@ def baixar_arquivo(service, file_id, destino: Path):
     destino.write_bytes(buffer.getvalue())
 
 
+def nome_destino(nome_original: str) -> str:
+    stem = Path(nome_original).stem
+    sufixo = stem[-14:]
+    if sufixo.isdigit():
+        return sufixo + ".pfx"
+    return nome_original
+
+
 def deve_substituir(arquivo_drive: dict, caminho_local: Path) -> bool:
     """Retorna True se o arquivo do Drive é mais recente que o local."""
     if not caminho_local.exists():
@@ -101,6 +109,26 @@ def deve_substituir(arquivo_drive: dict, caminho_local: Path) -> bool:
         caminho_local.stat().st_mtime, tz=timezone.utc
     )
     return modified_drive > modified_local
+
+
+def gerar_report(report: dict, total_baixados: int, total_ignorados: int):
+    agora = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
+    caminho = LOCAL_DIR / f"report_{agora}.txt"
+    linhas = [
+        f"Relatório de download - {agora}",
+        f"Baixados: {total_baixados} | Já atualizados: {total_ignorados}",
+        "",
+    ]
+    if report:
+        for pasta, arquivos in sorted(report.items()):
+            linhas.append(f"[{pasta}]")
+            for nome in arquivos:
+                linhas.append(f"  - {nome}")
+            linhas.append("")
+    else:
+        linhas.append("Nenhum arquivo baixado.")
+    caminho.write_text("\n".join(linhas), encoding="utf-8")
+    print(f"\nReport gerado: {caminho}")
 
 
 def main():
@@ -116,21 +144,24 @@ def main():
 
     total_baixados = 0
     total_ignorados = 0
+    report = {}  # {nome_pasta: [nomes de arquivos baixados]}
 
     for pasta in todas_as_fontes:
         arquivos = listar_arquivos(service, pasta["id"])
         if not arquivos:
             continue
         for arq in arquivos:
-            destino = LOCAL_DIR / arq["name"]
+            destino = LOCAL_DIR / nome_destino(arq["name"])
             if deve_substituir(arq, destino):
                 print(f"  Baixando: {arq['name']} (pasta: {pasta['name']})")
                 baixar_arquivo(service, arq["id"], destino)
                 total_baixados += 1
+                report.setdefault(pasta["name"], []).append(nome_destino(arq["name"]))
             else:
                 print(f"  Ignorando (já atualizado): {arq['name']}")
                 total_ignorados += 1
 
+    gerar_report(report, total_baixados, total_ignorados)
     print(f"\nConcluído. {total_baixados} arquivo(s) baixado(s), {total_ignorados} já estavam atualizados.")
 
 
