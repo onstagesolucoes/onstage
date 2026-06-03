@@ -1,6 +1,7 @@
 import xml.etree.ElementTree as ET
 import os
 import pandas as pd
+from datetime import datetime
 
 # =========================
 # CONFIGURAÇÃO
@@ -10,6 +11,9 @@ PATH_PY = os.getcwd()
 BASE_DIR = os.path.join(PATH_PY, "notasfiscais")
 
 NS = {"nfse": "http://www.sped.fazenda.gov.br/nfse"}
+
+# Campos obrigatórios para considerar a NF válida
+CAMPOS_OBRIGATORIOS = ["cnpj_emitente", "valor_servico", "data_emissao"]
 
 # =========================
 # FUNÇÕES AUXILIARES
@@ -95,6 +99,15 @@ def extrair_dados(root, clinica, ano_mes, tipo):
 
 registros = []
 erros = []
+falhas = []
+chaves_canceladas = set()
+
+
+def tag_local(element):
+    """Retorna o nome da tag sem namespace."""
+    tag = element.tag
+    return tag.split("}")[-1] if "}" in tag else tag
+
 
 for clinica in os.listdir(BASE_DIR):
     caminho_clinica = os.path.join(BASE_DIR, clinica)
@@ -126,10 +139,40 @@ for clinica in os.listdir(BASE_DIR):
                 try:
                     tree = ET.parse(caminho_xml)
                     root = tree.getroot()
+
+                    # Evento de cancelamento — coleta a chave e ignora como nota
+                    if tag_local(root) == "evento":
+                        if root.find(".//nfse:e101101", NS) is not None:
+                            ch = get_text(root, ".//nfse:chNFSe")
+                            if ch:
+                                chaves_canceladas.add("NFS" + ch)
+                        continue
+
                     dados = extrair_dados(root, clinica, ano_mes, tipo_norm)
-                    registros.append(dados)
+
+                    campos_vazios = [c for c in CAMPOS_OBRIGATORIOS if not dados.get(c)]
+                    if campos_vazios:
+                        falhas.append({
+                            "arquivo": caminho_xml,
+                            "clinica": clinica,
+                            "ano_mes": ano_mes,
+                            "tipo": tipo_norm,
+                            "motivo": "campos obrigatórios ausentes",
+                            "campos_vazios": ", ".join(campos_vazios),
+                        })
+                        print(f"[INCOMPLETO] {caminho_xml} — campos vazios: {campos_vazios}")
+                    else:
+                        registros.append(dados)
 
                 except Exception as e:
+                    falhas.append({
+                        "arquivo": caminho_xml,
+                        "clinica": clinica,
+                        "ano_mes": ano_mes,
+                        "tipo": tipo_norm,
+                        "motivo": "erro de leitura XML",
+                        "campos_vazios": "",
+                    })
                     erros.append({"arquivo": caminho_xml, "erro": str(e)})
                     print(f"[ERRO] {caminho_xml}: {e}")
 
@@ -139,6 +182,12 @@ for clinica in os.listdir(BASE_DIR):
 # =========================
 
 df = pd.DataFrame(registros)
+
+# Marca notas canceladas cruzando com os eventos de cancelamento coletados
+if chaves_canceladas and "chave_nfse" in df.columns:
+    mask = df["chave_nfse"].isin(chaves_canceladas)
+    df.loc[mask, "status"] = "CANCELADA"
+    print(f"🚫 {mask.sum()} nota(s) marcada(s) como CANCELADA com base nos eventos.")
 
 # Converte colunas de valor/alíquota para numérico (ponto como separador decimal)
 colunas_numericas = [
@@ -151,12 +200,20 @@ for col in colunas_numericas:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
 print(f"\n✅ {len(df)} notas processadas com sucesso.")
-if erros:
-    print(f"⚠️  {len(erros)} arquivo(s) com erro.")
+if falhas:
+    print(f"⚠️  {len(falhas)} arquivo(s) com falha ({sum(1 for f in falhas if f['motivo'] == 'erro de leitura XML')} erro(s) de XML, {sum(1 for f in falhas if f['motivo'] == 'campos obrigatórios ausentes')} incompleto(s)).")
 
 print(df.head())
 
-# Salva em Excel
+# Salva consolidado em Excel
 output_path = os.path.join(PATH_PY, "notas_fiscais_consolidado.xlsx")
 df.to_excel(output_path, index=False)
-print(f"\n📁 Arquivo salvo em: {output_path}")
+print(f"\n📁 Consolidado salvo em: {output_path}")
+
+# Gera relatório de falhas
+if falhas:
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    report_path = os.path.join(PATH_PY, f"report_falhas_{timestamp}.xlsx")
+    df_falhas = pd.DataFrame(falhas)
+    df_falhas.to_excel(report_path, index=False)
+    print(f"📋 Relatório de falhas salvo em: {report_path}")

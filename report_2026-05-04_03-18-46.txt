@@ -1,0 +1,242 @@
+Relatório de download - 2026-05-04_03-18-46
+Baixados: 80 | Já atualizados: 0
+
+[01 - IM Serviços Médicos]
+  - 49145678000151.pfx
+
+[02 - IACG]
+  - 49456081000128.pfx
+
+[03 - MEDF Serviços Médicos]
+  - 49899508000162.pfx
+
+[05 - Centro Terapêutico Dedicar]
+  - 50219602000102.pfx
+
+[07 - GastroMed Serviços Médicos]
+  - 51223925000132.pfx
+
+[10 - Melissa Xavier Menezes]
+  - 43092673000121.pfx
+
+[100 - Isabella Rodarte Serviços Médicos]
+  - 61487677000190.pfx
+
+[101 - Almeida & Soares Prestação de Serviços Hospitalares]
+  - 61939964000194.pfx
+
+[102 - Dermapet]
+  - 65018703000192.pfx
+
+[103 - ML Medicina]
+  - 65088161000124.pfx
+
+[104 - Gaspar Serviços Médicos (Dra. Deborah Gaspar)]
+  - 65736857000110.pfx
+
+[105 - Ribeiro Nunes Serviços Médicos]
+  - 65859239000167.pfx
+
+[106 - Siqueira Psiquiatria]
+  - 65866405000152.pfx
+
+[11 - Pablo Fernandes]
+  - 41933439000154.pfx
+
+[14 - JM Serviços Médicos]
+  - 53206430000120.pfx
+
+[15 - R. Energy Rep]
+  - 53967864000143.pfx
+
+[16 - LC Serviços de Saúde]
+  - 54604353000120.pfx
+
+[18 - RRS Saúde (Dr. Raphael Rezende)]
+  - 54650100000192.pfx
+
+[20 - DA Medicina (Dr. Douglas Almeida)]
+  - 54846807000179.pfx
+
+[21 - Soares e Lobo Serviços Médicos (Dra. Yasmin Maciel)]
+  - 38826274000107.pfx
+
+[25 - Psique (Dr. Leandro Silva)]
+  - 11314320000132.pfx
+
+[28 - JP Tameirão Serviços Médicos (Dr. João Pedro Gregório)]
+  - 55964841000100.pfx
+
+[29 - NMN Medicina (Dra. Nathalia Melgaço)]
+  - 55954443000103.pfx
+
+[30 - Ímpeto Fisioterapia (Luísa e Adam)]
+  - 29554530000163.pfx
+
+[31 - Raquel Athayde Serviços Médicos]
+  - 56301185000129.pfx
+
+[32 - VS Medicina (Dr. Victor Soares)]
+  - 56301848000105.pfx
+
+[35 - Kelen Fernandes Fisioterapia]
+  - 57495487000148.pfx
+
+[37 - JCR Medicina (Dra. Júlia Guimarães)]
+  - 57814208000161.pfx
+
+[38 - FSA Serviços Médicos Ltda. (Dr. Felipe Sena)]
+  - 55329232000180.pfx
+
+[39 - Matheus Evangelista Siqueira Serviços Médicos]
+  - 49703898000153.pfx
+
+[40 - Igor Amaral Serviços Médicos]
+  - 53201608000140.pfx
+
+[43 - Gabriella B Serviço Médicos LTDA]
+  - 55769380000115.pfx
+
+[44 - DMS Medicina (Dra. Diuliana Marina)]
+  - 59168194000181.pfx
+
+[45 - Guimarães Mangaba Investimentos (Dr. Felipe Ribeiro)]
+  - 59120406000150.pfx
+
+[47 - Braca Consultoria em Treinamento Físico (Pedro Bracaense)]
+  - 59394664000125.pfx
+
+[48 - Natalia Lourenço Mesquita]
+  - 48939079000147.pfx
+
+[49 - Bruna PB Serviços em Fisioterapia (Dra. Bruna Bartolhomeu)]
+  - 55989486000124.pfx
+
+[50 - Ana Gabriela Andrade Oliveira]
+  - 46052636000188.pfx
+
+[51 - Gabriela Amorim de Castro]
+  - 42350638000100.pfx
+
+[52 - ENFANT Clínica Pediatrica Ltda. (Dra. Roberta e Bruno)]
+  - 45838235000195.pfx
+
+[54 - Sollon Nathan Freita Almeida Serviços Medicos LTDA]
+  - 58435946000160.pfx
+
+[56 - DG Palestras e Saúde (Dr. Daniel Gerth)]
+  - 60287845000131.pfx
+
+[57 - Braga Serviços Médicos LTDA (Dra. Maisa Braga)]
+  - 48813080000120.pfx
+
+[58 - Maipo (Dra. Ludimila Sena)]
+  - 61030387000113.pfx
+
+[59 - Thais Quaresma Medicina LTDA]
+  - 61257595000150.pfx
+
+[61 - Guilherme Dutra Saude LTDA]
+  - 61869250000157.pfx
+
+[62 - Joyce Rodrigues Serviços Médicos]
+  - 62219409000150.pfx
+
+[63 - Maciel Serviços Médicos LTDA (Dra. Yasmin Maciel)]
+  - 62350101000140.pfx
+
+[64 - LNAS SERVICOS MEDICOS LTDA (Dra. Lívia Schiavo)]
+  - 62412593000150.pfx
+
+[65 - JF SERVICOS MEDICOS (Dra. Júlia Rayane)]
+  - 55571256000140.pfx
+
+[66 - Nascimento Serviços Odontologicos LTDA (Dra. Marcela Nascimento)]
+  - 62781581000101.pfx
+
+[67 - N.X. Serviços Médicos (Dra. Marina Nacife)]
+  - 63167240000103.pfx
+
+[68 - Instituto Synapse (Letícia Amaral e Anna Carolina)]
+  - 63155137000135.pfx
+
+[70 - LLN SERVIÇOS ADMINISTRATIVOS (Lucas Laure)]
+  - 63391724000123.pfx
+
+[73 - NJ Resende Serviços Medicos LTDA (Dra. Nayara Jassanan)]
+  - 53364064000138.pfx
+
+[74 - DB Aviation (Diego Borges)]
+  - 63415967000154.pfx
+
+[75 - GRC Medicina (Dra. Graciele Campos)]
+  - 63597425000140.pfx
+
+[76 - Raquima Serviços Médicos (Dra. Marina Horta)]
+  - 63747193000169.pfx
+
+[77 - Benessere Serviços Médicos (Dra.Lara Concertti)]
+  - 63777158000192.pfx
+
+[78 - Cardiovet Serviços Veterinarios ]
+  - 63820094000165.pfx
+
+[79 - ABMS Medicina (Dr Marcio Correa)]
+  - 63838084000157.pfx
+
+[81 - Altomare Veterinária]
+  - 63920962000189.pfx
+
+[82 - ALF Medicina]
+  - 64071221000133.pfx
+
+[83 - Senra Medicina]
+  - 64160854000118.pfx
+
+[84 - Matheus A. Veterinário]
+  - 64161062000168.pfx
+
+[85 - Souza Veterinária]
+  - 64161199000112.pfx
+
+[86 - Larissa Anest Veterinária]
+  - 64166285000118.pfx
+
+[87 - Toitio Serviços de Saúde]
+  - 64126604000161.pfx
+
+[88 - AJPS Serviços Médicos]
+  - 64302917000123.pfx
+
+[89 - Prado Pouzas Medicina]
+  - 64336739000151.pfx
+
+[90 - J Oliveira Medicina (Dr. João Costa) ]
+  - 64352827000147.pfx
+
+[91 - IG Medicina]
+  - 64358418000158.pfx
+
+[92 - MLJ Serviços Médicos]
+  - 64380278000114.pfx
+
+[93 - AJT Medicina]
+  - 64417135000130.pfx
+
+[94 - AHOC Medicina]
+  - 64613401000108.pfx
+
+[95 - Rafaella Oliveira Veterinária]
+  - 24898695000139.pfx
+
+[96 - IVK Serviços Médicos]
+  - 56703029000194.pfx
+
+[97 - Milena Ferreira]
+  - 66332070000155.pfx
+
+[98 - Bruno Valadares Medicina]
+  - 57431668000100.pfx
+
+[99 - Larissa GastroVet]
+  - 64944773000109.pfx

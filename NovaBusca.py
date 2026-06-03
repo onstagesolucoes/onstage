@@ -280,6 +280,8 @@ def processar_empresa(row, nsu_inicial: int = 0) -> int:
 
 
 def main():
+    inicio = time.time()
+
     if not os.path.exists(EXCEL_PATH):
         print(f"Arquivo Excel não encontrado: {EXCEL_PATH}")
         return
@@ -342,6 +344,11 @@ def main():
 
     df.to_excel(EXCEL_PATH, index=False)
     print(f"Excel atualizado salvo em: {EXCEL_PATH}")
+
+    duracao = time.time() - inicio
+    horas, resto = divmod(int(duracao), 3600)
+    minutos, segundos = divmod(resto, 60)
+    print(f"\nTempo total de execução: {horas:02d}h {minutos:02d}m {segundos:02d}s")
 
 
 if __name__ == "__main__":
