@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "PowerShell(& \"c:\\\\Users\\\\tiago\\\\OneDrive\\\\Documentos\\\\Python\\\\onstage\\\\.venv\\\\Scripts\\\\python.exe\" -m pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client 2>&1)",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "Bash(python -m pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client)",
+      "Bash(python \"c:\\\\Users\\\\tiago\\\\OneDrive\\\\Documentos\\\\Python\\\\AccSim Analytics\\\\onstage\\\\get_certificados.py\")"
     ]
   }
 }
