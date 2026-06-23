@@ -10,6 +10,7 @@ Setup necessário (apenas uma vez):
 
 import json
 import os
+from datetime import datetime
 
 import pandas as pd
 import requests
@@ -19,6 +20,8 @@ from sqlalchemy import create_engine, MetaData, Table, select
 load_dotenv()
 
 URL_LISTAR_EMPRESAS = "https://rest.oneflow.com.br/api/oneflow/escritorio/empresas/listar"
+URL_TOKEN_OMIE = "https://app.omie.com.br/api/portal/apps/{apphash}/token/"
+APPHASH_ADMIN = "accsim_admin"
 TOKEN = os.getenv("ONEFLOW_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 TABLE_NAME_EMPRESAS = "oneflow_empresas"
@@ -86,6 +89,13 @@ def buscar_todas_empresas() -> pd.DataFrame:
     return pd.DataFrame(todas_empresas)
 
 
+def limpar_cnpj(cnpj) -> str:
+    """Remove tudo que não for dígito (pontos, barra, hífen)."""
+    if not cnpj:
+        return cnpj
+    return "".join(ch for ch in str(cnpj) if ch.isdigit())
+
+
 def upsert_empresa(conn, tabela: Table, dados: dict) -> str:
     existente = conn.execute(
         select(tabela).where(tabela.c.apphash == dados["apphash"])
@@ -109,7 +119,8 @@ def upsert_empresa(conn, tabela: Table, dados: dict) -> str:
     return "sem alterações"
 
 
-def salvar_no_banco(df: pd.DataFrame):
+def salvar_no_banco(df: pd.DataFrame) -> list[str]:
+    """Faz upsert das empresas no banco e retorna os apphashes recém-inseridos."""
     if not DATABASE_URL:
         raise RuntimeError("Defina DATABASE_URL no arquivo .env antes de executar.")
 
@@ -117,6 +128,7 @@ def salvar_no_banco(df: pd.DataFrame):
     tabela = Table(TABLE_NAME_EMPRESAS, MetaData(), autoload_with=engine)
 
     contadores = {"inserido": 0, "atualizado": 0, "sem_alteracoes": 0, "sem_apphash": 0}
+    apphashes_inseridos = []
 
     for registro in df.to_dict(orient="records"):
         dados = {coluna: registro.get(coluna) for coluna in COLUNAS_EMPRESA}
@@ -124,11 +136,14 @@ def salvar_no_banco(df: pd.DataFrame):
             contadores["sem_apphash"] += 1
             continue
 
+        dados["cnpj"] = limpar_cnpj(dados["cnpj"])
+
         with engine.begin() as conn:
             resultado = upsert_empresa(conn, tabela, dados)
 
         if resultado == "inserido":
             contadores["inserido"] += 1
+            apphashes_inseridos.append(dados["apphash"])
         elif resultado == "atualizado":
             contadores["atualizado"] += 1
         else:
@@ -142,11 +157,78 @@ def salvar_no_banco(df: pd.DataFrame):
         f"{contadores['sem_apphash']} sem apphash (ignorado(s))."
     )
 
+    return apphashes_inseridos
+
+
+def buscar_token_usuario(engine, tabela: Table) -> str:
+    """Busca o token do usuário admin (linha apphash='accsim_admin'), usado para
+    autenticar a chamada de coleta de token de cada empresa na API da Omie."""
+    with engine.connect() as conn:
+        linha = conn.execute(
+            select(tabela.c.token).where(tabela.c.apphash == APPHASH_ADMIN)
+        ).fetchone()
+
+    if linha is None or not linha.token:
+        raise RuntimeError(f"Não encontrei token do usuário admin (apphash='{APPHASH_ADMIN}').")
+
+    return linha.token
+
+
+def coletar_token_empresa(token_usuario: str, apphash: str) -> dict:
+    resp = requests.get(
+        URL_TOKEN_OMIE.format(apphash=apphash),
+        headers={"Authorization": f"Bearer {token_usuario}"},
+    )
+    resp.raise_for_status()
+    dados = resp.json()
+
+    if "token" not in dados or "refresh_token" not in dados:
+        raise RuntimeError(f"Resposta inesperada ao buscar token de '{apphash}': {dados}")
+
+    return dados
+
+
+def atualizar_tokens_novas_empresas(apphashes_novos: list[str]):
+    """Para cada empresa nova, busca token/refresh_token na API da Omie e grava no banco."""
+    if not apphashes_novos:
+        print("\nNenhuma empresa nova: nada a fazer na coleta de tokens.")
+        return
+
+    engine = create_engine(DATABASE_URL, echo=False)
+    tabela = Table(TABLE_NAME_EMPRESAS, MetaData(), autoload_with=engine)
+    token_usuario = buscar_token_usuario(engine, tabela)
+
+    print(f"\nColetando tokens para {len(apphashes_novos)} empresa(s) nova(s)...")
+    sucesso = 0
+    falha = 0
+
+    for apphash in apphashes_novos:
+        try:
+            dados = coletar_token_empresa(token_usuario, apphash)
+        except Exception as exc:
+            print(f"  Falha ao coletar token de '{apphash}': {exc}")
+            falha += 1
+            continue
+
+        with engine.begin() as conn:
+            conn.execute(
+                tabela.update().where(tabela.c.apphash == apphash).values(
+                    token=dados["token"],
+                    refresh_token=dados["refresh_token"],
+                    data_renovacao=datetime.now(),
+                )
+            )
+        print(f"  Token coletado para '{apphash}'.")
+        sucesso += 1
+
+    print(f"\nColeta de tokens: {sucesso} sucesso(s), {falha} falha(s).")
+
 
 def main():
     df = buscar_todas_empresas()
     print(f"\nTotal de empresas coletadas: {len(df)}")
-    salvar_no_banco(df)
+    apphashes_novos = salvar_no_banco(df)
+    atualizar_tokens_novas_empresas(apphashes_novos)
 
 
 if __name__ == "__main__":
