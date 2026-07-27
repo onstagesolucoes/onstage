@@ -1,0 +1,489 @@
+{
+  "name": "Conexa -> Nibo - Envio de Fatura de Serviço",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# CONEXA → NIBO (tela de conferência)\n\n**O que faz:** recebe um webhook do Conexa quando uma fatura de serviço é gerada, busca o cliente no Supabase, baixa o PDF da fatura no Conexa e envia para a tela de conferência do Nibo (criar arquivo → upload → conferência). Depois cria uma tarefa do dia no ClickUp e grava o status no Supabase.\n\n**⚠️ Pontos marcados TODO-DOC nesta workflow ainda precisam ser validados contra a documentação real antes de ativar em produção:**\n1. Path/nome do webhook do Conexa (nó \"Webhook Conexa - Fatura Gerada\") — evento novo, ainda não mapeado.\n2. Campo que identifica a fatura no payload (nó \"Extrair Dados do Webhook\") — usando `chargeId` como palpite.\n3. Endpoint de download do PDF da fatura (nó \"Conexa - Baixar PDF da Fatura\").\n\nOs 3 passos de envio ao Nibo (Criar Arquivo → Upload PDF → Conferência) e o padrão de Supabase JÁ FORAM validados em produção em outra automação (OneFlow → Nibo) e foram reaproveitados aqui.\n\n**Env vars necessárias (configurar no n8n, nunca hardcoded):**\n`SUPABASE_URL` `SUPABASE_SERVICE_KEY` `NIBO_API_KEY` `NIBO_USER_ID` `NIBO_ACCOUNTING_FIRM_ID` `CONEXA_API_BASE_URL` `CONEXA_API_TOKEN` `CLICKUP_API_TOKEN`\n\n**Antes de ativar:** rodar `supabase/migrations/001_conexa_nibo_clickup.sql` e popular `clientes.conexa_customer_id` + `clientes.clickup_list_id`.",
+        "height": 480,
+        "width": 700,
+        "color": 4
+      },
+      "id": "2cd520db-b4d0-4930-b796-22fc5322fbf9",
+      "name": "Visão Geral",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-3200, -420]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "conexa-fatura-servico-gerada",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "02e2b2cf-6257-44c8-a3f9-df9a2a26d6a9",
+      "name": "Webhook Conexa - Fatura Gerada",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-3200, 80],
+      "webhookId": "conexa-fatura-servico-gerada",
+      "notes": "⚠️ TODO-DOC: confirmar no painel do Conexa o nome/path exato do evento disparado quando uma fatura de serviço é gerada. Não é nenhum dos webhooks de cobrança já existentes (2 dias antes, cobrança do dia, pagamento confirmado, protesto) — ajuste o path para bater com o que for cadastrado no Conexa."
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\n\n// ⚠️ TODO-DOC: confirmar contra a doc do Postman do Conexa qual campo\n// realmente identifica a fatura/nota de serviço nesse payload. Usando\n// chargeId como palpite, seguindo o padrão visto no evento \"Pagamento\n// Confirmado\" de outra automação Conexa já em produção.\nconst conexaInvoiceId = String(body.chargeId ?? body.invoiceId ?? body.id ?? '');\n\nreturn [{\n  json: {\n    conexaCustomerId: String(body.customer?.id ?? ''),\n    conexaCompanyId: String(body.company?.id ?? ''),\n    conexaInvoiceId,\n    nomeCliente: body.customer?.name ?? '',\n    dueDate: body.dueDate ?? null,\n    amount: body.amount ?? null,\n    competencia: (body.competenceDate || body.dueDate || '').slice(0, 7),\n  },\n}];"
+      },
+      "id": "754e8761-21ec-43c1-be48-bdfa7594ca6f",
+      "name": "Extrair Dados do Webhook",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-2960, 80]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/clientes?conexa_customer_id=eq.' + $json.conexaCustomerId + '&select=*' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "32974237-90dd-4062-96c7-32f40610df55",
+      "name": "Supabase - Lookup Cliente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-2720, 80],
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "notes": "Mesmo projeto/tabela `clientes` já usados no fluxo OneFlow -> Nibo. Requer coluna conexa_customer_id (migration 001)."
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $json;\nconst arr = Array.isArray(resp) ? resp : (resp ? [resp] : []);\nconst cliente = arr[0] || null;\nconst dados = $('Extrair Dados do Webhook').item.json;\n\nreturn [{\n  json: {\n    ...dados,\n    encontrado: !!cliente,\n    ativo: cliente ? cliente.ativo !== false : false,\n    cnpj: cliente ? cliente.cnpj : null,\n    nomeClienteCadastro: cliente ? cliente.nome_cliente : null,\n    clickupListId: cliente ? cliente.clickup_list_id : null,\n  },\n}];"
+      },
+      "id": "0cf02fd5-7036-4d8d-b436-77cf88d0b4de",
+      "name": "Normalizar Cliente",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-2480, 80]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "8f6a5d4a-1a11-4a2a-9c3a-9d1a4b2c3d4e",
+              "leftValue": "={{ $json.encontrado && $json.ativo }}",
+              "rightValue": "",
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f6ff062c-dd89-4f3f-8d2a-11b25e4f8d1c",
+      "name": "Cliente Encontrado e Ativo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-2240, 80]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, motivo: 'cliente_nao_mapeado_ou_inativo', conexaCustomerId: $json.conexaCustomerId }) }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "749f9391-e1f3-43a5-a016-cfd1eae3c436",
+      "name": "Responder - Cliente Não Mapeado",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-2000, 340]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/envios_nibo_faturas?cnpj=eq.' + $json.cnpj + '&conexa_invoice_id=eq.' + $json.conexaInvoiceId + '&select=id,status' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d3f0da1f-b319-404e-95ce-e51eb5726866",
+      "name": "Supabase - Checar Idempotência",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-2000, 80],
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "notes": "Evita reprocessar se o Conexa reenviar o mesmo evento de webhook."
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $json;\nconst arr = Array.isArray(resp) ? resp : (resp ? [resp] : []);\nconst existente = arr[0] || null;\nconst dados = $('Normalizar Cliente').item.json;\n\nreturn [{\n  json: {\n    ...dados,\n    jaEnviado: !!(existente && existente.status !== 'erro'),\n  },\n}];"
+      },
+      "id": "ee9be64a-1882-4a70-9ba5-0412b01c38a5",
+      "name": "Normalizar Idempotência",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1760, 80]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e",
+              "leftValue": "={{ $json.jaEnviado }}",
+              "rightValue": "",
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "4c85022f-0ea7-4568-bcc1-461f9a3592de",
+      "name": "Já Enviado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-1520, 80]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, motivo: 'ja_enviado_anteriormente', conexaInvoiceId: $json.conexaInvoiceId }) }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "6a432952-f2ab-4da7-910d-c2205bba1ea2",
+      "name": "Responder - Já Enviado (Skip)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-1280, 340]
+    },
+    {
+      "parameters": {
+        "content": "## ⚠️ TODO-DOC\nEndpoint de download do PDF ainda não confirmado na doc do Postman do Conexa. Ajuste URL/auth do node ao lado antes de ativar.",
+        "height": 140,
+        "width": 300,
+        "color": 3
+      },
+      "id": "4c516a16-a6f0-4e0d-ac65-63ebf2fce644",
+      "name": "Nota TODO-DOC PDF",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-1280, -160]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.CONEXA_API_BASE_URL + '/faturas/' + $json.conexaInvoiceId + '/pdf' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $env.CONEXA_API_TOKEN }}" }
+          ]
+        },
+        "options": { "response": { "response": { "responseFormat": "file" } } }
+      },
+      "id": "188dc822-0ba6-41af-b9e5-cd73d85c3a67",
+      "name": "Conexa - Baixar PDF da Fatura",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-1280, 80],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "notes": "⚠️ TODO-DOC: path exato para baixar o PDF da fatura ainda não confirmado na doc do Postman do Conexa (o usuário confirmou que existe uma rota própria pra isso). Ajuste URL e autenticação antes de ativar."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.nibo.com.br/accountant/api/v1/accountingfirms/{{ $env.NIBO_ACCOUNTING_FIRM_ID }}/files",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-API-Key", "value": "={{ $env.NIBO_API_KEY }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ name: $('Normalizar Idempotência').item.json.conexaInvoiceId + '_' + ($('Normalizar Idempotência').item.json.competencia || '') + '_' + $('Normalizar Idempotência').item.json.cnpj + '.pdf' }) }}",
+        "options": {}
+      },
+      "id": "ccc75c27-e895-4dd6-a21d-31a4a2876452",
+      "name": "NIBO - Criar Arquivo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-1040, 80],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "notes": "Passo 1/3 — retorna { id, sharedAccessSignature }. Endpoint confirmado no workflow OneFlow -> Nibo já em produção."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const uploadInfo = $input.item.json; // { id, sharedAccessSignature } ou { error: ... }\nconst binaryData = $('Conexa - Baixar PDF da Fatura').item.binary?.data;\nreturn {\n  json: uploadInfo,\n  binary: binaryData ? { data: binaryData } : undefined,\n};"
+      },
+      "id": "c2504bff-8318-4a9d-b57d-dde0cfb98333",
+      "name": "Anexar Binário",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-800, 80]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ $json.sharedAccessSignature }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-ms-blob-type", "value": "BlockBlob" },
+            { "name": "Content-Type", "value": "application/pdf" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {}
+      },
+      "id": "6c6410e4-14de-4851-b4fe-f3c6e78e7682",
+      "name": "NIBO - Upload PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-560, 80],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "notes": "Passo 2/3 — PUT do binário no sharedAccessSignature (Azure Blob)."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.nibo.com.br/accountant/api/v1/accountingfirms/{{ $env.NIBO_ACCOUNTING_FIRM_ID }}/conferences",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-API-Key", "value": "={{ $env.NIBO_API_KEY }}" },
+            { "name": "X-User-Id", "value": "={{ $env.NIBO_USER_ID }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ fileId: $('NIBO - Criar Arquivo').item.json.id }) }}",
+        "options": {}
+      },
+      "id": "ca99437e-9e80-4032-9254-6c32229d508e",
+      "name": "NIBO - Conferência",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-320, 80],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "notes": "Passo 3/3 — este é o envio para a tela de conferência. Pré-requisito: robô padrão habilitado no portal Nibo (mesmo padrão do workflow OneFlow -> Nibo)."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "empty", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e245a3e4-729d-4357-9727-adcd264a6c10",
+      "name": "Envio OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-80, 80],
+      "notes": "Verifique manualmente no n8n (execução de teste) se este check bate com o formato real de erro retornado pelos nós anteriores com onError=continueRegularOutput — pode variar por versão do n8n."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.clickup.com/api/v2/list/' + $('Normalizar Idempotência').item.json.clickupListId + '/task' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{ $env.CLICKUP_API_TOKEN }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ name: 'Envio NIBO - ' + $('Normalizar Idempotência').item.json.nomeClienteCadastro + ' - ' + $now.toFormat('yyyy-MM-dd'), description: 'Fatura ' + $('Normalizar Idempotência').item.json.conexaInvoiceId + ' enviada para a tela de conferência do Nibo.' }) }}",
+        "options": {}
+      },
+      "id": "22ee43fa-5b95-4a6e-b31b-3e724af78ade",
+      "name": "ClickUp - Criar Tarefa",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [160, -80],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "notes": "Cria a tarefa do dia na lista do cliente (clickup_list_id do Supabase). Ajuste campos/status conforme a configuração real da sua lista no ClickUp."
+    },
+    {
+      "parameters": {
+        "jsCode": "const dados = $('Normalizar Idempotência').item.json;\nconst nibo = $('NIBO - Criar Arquivo').item.json;\nconst clickup = $json;\n\nreturn [{\n  json: {\n    cnpj: dados.cnpj,\n    conexa_invoice_id: dados.conexaInvoiceId,\n    nibo_file_id: nibo.id ?? null,\n    clickup_task_id: clickup.id ?? null,\n    status: 'enviado',\n    error_message: null,\n    sent_at: new Date().toISOString(),\n  },\n}];"
+      },
+      "id": "e6abd48e-f907-4541-84c1-117b20427203",
+      "name": "Set: Sucesso",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, -80]
+    },
+    {
+      "parameters": {
+        "jsCode": "const dados = $('Normalizar Idempotência').item.json;\nconst falha = $json;\n\nreturn [{\n  json: {\n    cnpj: dados.cnpj,\n    conexa_invoice_id: dados.conexaInvoiceId,\n    nibo_file_id: null,\n    clickup_task_id: null,\n    status: 'erro',\n    error_message: String(falha.error ?? falha.message ?? 'Falha não identificada no envio ao Nibo'),\n    sent_at: new Date().toISOString(),\n  },\n}];"
+      },
+      "id": "ab5e39c8-2cc5-4d91-afe9-19e4a6065bbb",
+      "name": "Set: Erro Envio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [160, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/envios_nibo_faturas?on_conflict=cnpj,conexa_invoice_id' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "resolution=merge-duplicates,return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "dd3a5148-3496-4979-b05a-008b25ab85b7",
+      "name": "Supabase - Upsert Envio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [640, 80],
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "notes": "UNIQUE (cnpj, conexa_invoice_id) garante idempotência, mesmo padrão validado no fluxo OneFlow -> Nibo (tabela entregas)."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true }) }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "e9414444-bd2c-4a22-ab3a-35cb07d2db28",
+      "name": "Responder - OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [880, 80]
+    }
+  ],
+  "connections": {
+    "Webhook Conexa - Fatura Gerada": {
+      "main": [[{ "node": "Extrair Dados do Webhook", "type": "main", "index": 0 }]]
+    },
+    "Extrair Dados do Webhook": {
+      "main": [[{ "node": "Supabase - Lookup Cliente", "type": "main", "index": 0 }]]
+    },
+    "Supabase - Lookup Cliente": {
+      "main": [[{ "node": "Normalizar Cliente", "type": "main", "index": 0 }]]
+    },
+    "Normalizar Cliente": {
+      "main": [[{ "node": "Cliente Encontrado e Ativo?", "type": "main", "index": 0 }]]
+    },
+    "Cliente Encontrado e Ativo?": {
+      "main": [
+        [{ "node": "Supabase - Checar Idempotência", "type": "main", "index": 0 }],
+        [{ "node": "Responder - Cliente Não Mapeado", "type": "main", "index": 0 }]
+      ]
+    },
+    "Supabase - Checar Idempotência": {
+      "main": [[{ "node": "Normalizar Idempotência", "type": "main", "index": 0 }]]
+    },
+    "Normalizar Idempotência": {
+      "main": [[{ "node": "Já Enviado?", "type": "main", "index": 0 }]]
+    },
+    "Já Enviado?": {
+      "main": [
+        [{ "node": "Responder - Já Enviado (Skip)", "type": "main", "index": 0 }],
+        [{ "node": "Conexa - Baixar PDF da Fatura", "type": "main", "index": 0 }]
+      ]
+    },
+    "Conexa - Baixar PDF da Fatura": {
+      "main": [[{ "node": "NIBO - Criar Arquivo", "type": "main", "index": 0 }]]
+    },
+    "NIBO - Criar Arquivo": {
+      "main": [[{ "node": "Anexar Binário", "type": "main", "index": 0 }]]
+    },
+    "Anexar Binário": {
+      "main": [[{ "node": "NIBO - Upload PDF", "type": "main", "index": 0 }]]
+    },
+    "NIBO - Upload PDF": {
+      "main": [[{ "node": "NIBO - Conferência", "type": "main", "index": 0 }]]
+    },
+    "NIBO - Conferência": {
+      "main": [[{ "node": "Envio OK?", "type": "main", "index": 0 }]]
+    },
+    "Envio OK?": {
+      "main": [
+        [{ "node": "ClickUp - Criar Tarefa", "type": "main", "index": 0 }],
+        [{ "node": "Set: Erro Envio", "type": "main", "index": 0 }]
+      ]
+    },
+    "ClickUp - Criar Tarefa": {
+      "main": [[{ "node": "Set: Sucesso", "type": "main", "index": 0 }]]
+    },
+    "Set: Sucesso": {
+      "main": [[{ "node": "Supabase - Upsert Envio", "type": "main", "index": 0 }]]
+    },
+    "Set: Erro Envio": {
+      "main": [[{ "node": "Supabase - Upsert Envio", "type": "main", "index": 0 }]]
+    },
+    "Supabase - Upsert Envio": {
+      "main": [[{ "node": "Responder - OK", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1d34b1b1-fd63-4cc0-a3a3-caedb0587a5d",
+  "meta": {
+    "instanceId": "PLACEHOLDER_INSTANCE_ID"
+  },
+  "id": "conexaNiboEnvioFatura01",
+  "tags": []
+}

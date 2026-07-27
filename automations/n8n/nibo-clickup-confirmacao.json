@@ -1,0 +1,227 @@
+{
+  "name": "Nibo -> ClickUp - Confirmação de Entrega (baixa diária)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# NIBO → CLICKUP (confirmação/baixa)\n\n**O que faz:** roda 1x por dia, busca no Supabase os envios com `status = 'enviado'` (aguardando confirmação), checa no Nibo se o contador já confirmou manualmente a entrega/associação do arquivo (\"confirmar entrega manual do protocolo\"), e se sim marca a tarefa correspondente como concluída no ClickUp e atualiza o status no Supabase.\n\n**⚠️ TODO-DOC:** o endpoint 'confirmar entrega manual do protocolo' do Nibo não aparece em nenhum dos workflows de referência usados para montar esta automação — método, path e formato de resposta precisam ser validados na doc real antes de ativar.\n\n**Env vars necessárias:**\n`SUPABASE_URL` `SUPABASE_SERVICE_KEY` `NIBO_API_KEY` `NIBO_ACCOUNTING_FIRM_ID` `CLICKUP_API_TOKEN` `CLICKUP_STATUS_CONCLUIDO` (opcional — nome do status 'concluído' na sua lista do ClickUp, default 'complete')\n\n**Pré-requisito:** o Workflow 1 (conexa-nibo-envio-fatura) precisa já ter rodado e gravado registros com `status='enviado'` em `envios_nibo_faturas`.",
+        "height": 420,
+        "width": 680,
+        "color": 4
+      },
+      "id": "609ce2a5-023c-4e23-971f-a39bcbe46243",
+      "name": "Visão Geral",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-2400, -320]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "cronExpression", "expression": "0 18 * * *" }
+          ]
+        }
+      },
+      "id": "f4cdd395-1f80-470e-828f-6e806f6dc14c",
+      "name": "Cron Diário (18h)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [-2400, 80]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/envios_nibo_faturas?status=eq.enviado&select=*' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "11e7896e-08be-436b-a51c-4b72d6e9f341",
+      "name": "Supabase - Buscar Pendentes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-2160, 80],
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "notes": "Busca envios do Workflow 1 aguardando confirmação (status='enviado')."
+    },
+    {
+      "parameters": { "options": {} },
+      "id": "c65b9e1b-ab8c-4f53-8dad-9170be261d27",
+      "name": "Split por Envio",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [-1920, 80],
+      "notes": "Processa um envio por vez; recebe de volta o loop após atualizar (ou pular) cada item."
+    },
+    {
+      "parameters": {
+        "content": "## ⚠️ TODO-DOC\nEndpoint 'confirmar entrega manual do protocolo' não usado em nenhum dos workflows de referência. Confirme método/path/resposta na doc do Nibo antes de ativar.",
+        "height": 140,
+        "width": 300,
+        "color": 3
+      },
+      "id": "3670e2ca-c7bc-4b61-b11b-38470d16d81b",
+      "name": "Nota TODO-DOC Confirmação",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-1680, -160]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.nibo.com.br/accountant/api/v1/accountingfirms/{{ $env.NIBO_ACCOUNTING_FIRM_ID }}/files/{{ $json.nibo_file_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-API-Key", "value": "={{ $env.NIBO_API_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f4b9dcf5-8b64-49f7-a6db-e113f4492492",
+      "name": "NIBO - Confirmar Entrega Manual do Protocolo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-1680, 80],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "notes": "⚠️ TODO-DOC: método, path e campo de resposta que indica confirmação ainda não confirmados na doc do Nibo. Placeholder usa nibo_file_id (id retornado pelo Workflow 1) — ajuste conforme a doc real."
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $json;\nconst envio = $('Split por Envio').item.json;\n\n// ⚠️ TODO-DOC: confirmar o campo real que indica confirmação manual no Nibo.\nconst confirmado = resp?.confirmed === true || resp?.status === 'confirmado' || resp?.deliveryConfirmed === true;\n\nreturn [{\n  json: {\n    ...envio,\n    confirmadoNoNibo: confirmado,\n  },\n}];"
+      },
+      "id": "a6a0da9b-0fb4-4fa3-bf76-6d05c7d6c7ae",
+      "name": "Normalizar Confirmação",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1440, 80]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "9f8e7d6c-5b4a-4c3d-8e2f-1a0b9c8d7e6f",
+              "leftValue": "={{ $json.confirmadoNoNibo }}",
+              "rightValue": "",
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "04e175b4-c1dc-4e01-aa7a-9f190168b325",
+      "name": "Confirmado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-1200, 80]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ 'https://api.clickup.com/api/v2/task/' + $json.clickup_task_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{ $env.CLICKUP_API_TOKEN }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: $env.CLICKUP_STATUS_CONCLUIDO || 'complete' }) }}",
+        "options": {}
+      },
+      "id": "260bb883-1af9-4916-a610-8e16f866fed4",
+      "name": "ClickUp - Concluir Tarefa",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-960, -80],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "notes": "Essa é a 'baixa'. O nome do status deve bater exatamente com o status configurado na sua lista do ClickUp — ajuste CLICKUP_STATUS_CONCLUIDO se não for 'complete'."
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL + '/rest/v1/envios_nibo_faturas?id=eq.' + $json.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'confirmado', confirmed_at: new Date().toISOString() }) }}",
+        "options": {}
+      },
+      "id": "3afac3ea-9cca-4d8e-852b-873110f79791",
+      "name": "Supabase - Atualizar Confirmado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-720, -80],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    }
+  ],
+  "connections": {
+    "Cron Diário (18h)": {
+      "main": [[{ "node": "Supabase - Buscar Pendentes", "type": "main", "index": 0 }]]
+    },
+    "Supabase - Buscar Pendentes": {
+      "main": [[{ "node": "Split por Envio", "type": "main", "index": 0 }]]
+    },
+    "Split por Envio": {
+      "main": [
+        [],
+        [{ "node": "NIBO - Confirmar Entrega Manual do Protocolo", "type": "main", "index": 0 }]
+      ]
+    },
+    "NIBO - Confirmar Entrega Manual do Protocolo": {
+      "main": [[{ "node": "Normalizar Confirmação", "type": "main", "index": 0 }]]
+    },
+    "Normalizar Confirmação": {
+      "main": [[{ "node": "Confirmado?", "type": "main", "index": 0 }]]
+    },
+    "Confirmado?": {
+      "main": [
+        [{ "node": "ClickUp - Concluir Tarefa", "type": "main", "index": 0 }],
+        [{ "node": "Split por Envio", "type": "main", "index": 0 }]
+      ]
+    },
+    "ClickUp - Concluir Tarefa": {
+      "main": [[{ "node": "Supabase - Atualizar Confirmado", "type": "main", "index": 0 }]]
+    },
+    "Supabase - Atualizar Confirmado": {
+      "main": [[{ "node": "Split por Envio", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "f293c680-b03c-4ec3-a498-b172cd67ff20",
+  "meta": {
+    "instanceId": "PLACEHOLDER_INSTANCE_ID"
+  },
+  "id": "niboClickupConfirmacao01",
+  "tags": []
+}
