@@ -1,6 +1,6 @@
 ---
 name: fechamento-fiscal-folha
-description: Especialista em revisão de fechamento fiscal mensal (Simples Nacional e Lucro Presumido) e folha de pagamento, para conferir apurações e guias antes do envio. Use quando pedirem para revisar/conferir PGDAS, DAS, Fator R, IRPJ/CSLL/PIS/COFINS por presunção, folha de pagamento, eSocial, DCTFWeb, DARF ou "posso liberar essa guia/fechamento" — e sempre que o resultado precisar virar uma tarefa estruturada no ClickUp para o responsável pela entrega.
+description: Revisor de fechamento fiscal mensal (Simples Nacional e Lucro Presumido) e folha de pagamento, que confere a apuração antes do envio e valida se o registro no ClickUp bate com a realidade — pegando erros da automação OneFlow → ClickUp → Nibo. Use quando pedirem para revisar/conferir PGDAS, DAS, Fator R, IRPJ/CSLL/PIS/COFINS por presunção, folha, eSocial, DCTFWeb, DARF, "posso liberar essa guia", "confere se o fechamento desse cliente está certo", ou para checar tarefas marcadas como concluídas sem lastro.
 ---
 
 # Especialista em Fechamento Fiscal e Folha de Pagamento
@@ -247,34 +247,127 @@ Quando 🔴, deixe explícito que a guia/obrigação **não deve ser enviada** a
 a correção. Quando 🟡, deixe explícito que precisa de confirmação do
 responsável antes da liberação.
 
-## 5. Entrega estruturada no ClickUp
+## 5. Contexto operacional (onde esta revisão se encaixa)
 
-Esta skill alimenta um agente que entrega o resultado da revisão como
-tarefa no ClickUp para quem é responsável pelo envio das guias/documentos —
-a revisão não deve ficar só na conversa. Use as ferramentas do MCP ClickUp
-disponíveis na sessão (`clickup_create_task`, `clickup_create_comment` /
-`clickup_create_task_comment`, `clickup_find_member_by_name`,
-`clickup_update_task`) para criar ou atualizar a tarefa com:
+O fechamento é automatizado no seguinte fluxo:
 
-- **name**: `[<Cliente>] <MM/AAAA> — Fechamento Fiscal/Folha — <🟢/🟡/🔴>`
-- **markdown_description**: o Painel Resumido da seção 4, incluindo a
-  lista de exceções registradas com justificativa.
-- **due_date**: vencimento da guia/obrigação mais próxima identificada na
-  revisão (formato `YYYY-MM-DD`).
-- **priority**: `urgent` se 🔴, `high` se 🟡, `normal` se 🟢.
-- **tags**: usar tags já existentes no espaço equivalentes a
-  liberado / precisa-revisao / bloqueado (confirme os nomes existentes
-  antes de aplicar — `clickup_create_task` só aceita tags que já existem).
-- **assignees**: resolva o responsável pela entrega com
-  `clickup_find_member_by_name` quando um nome for informado; nunca deixe a
-  tarefa sem responsável quando o nome estiver disponível.
-- **list_id**: pergunte ao usuário em qual lista do ClickUp a tarefa deve
-  ser criada, caso ainda não tenha sido informado na conversa.
+```
+OneFlow (apuração + documentos)
+   └→ ClickUp (controle do fechamento, tarefa por cliente/competência)
+        └→ Nibo (envio das obrigações)
+             └→ WhatsApp (envio ao cliente)
+```
 
-Se a tarefa já existir (ex.: revisão de um fechamento em andamento), prefira
-`clickup_update_task` e/ou um comentário via `clickup_create_comment` com o
-painel atualizado, em vez de criar uma tarefa duplicada.
+A revisão é disparada **à medida que cada apuração é concluída no
+OneFlow** — não é um lote mensal agendado. Os dados chegam por dois
+caminhos: documentos gerados no OneFlow (que passam pelo agente) e
+informações da base de dados via API.
 
-Nunca marque a tarefa como concluída ou envie a guia por conta própria: a
-skill entrega o painel e a tarefa estruturada; a liberação e o envio
-continuam sendo decisão do responsável humano.
+No ClickUp, cada cliente/competência tem uma **tarefa-mãe** no padrão
+`<código> - <Nome do Cliente>` na lista `Fechamento Mensal`, com subtarefas
+padronizadas: `Validação de Notas Fiscais`, `Validação de Fator R`,
+`PGDAS-D — Declaração`, `DAS — Guia de Pagamento`, `Pró-Labore`,
+`DARF Previdenciário`, `Envio das Obrigações — Nibo`,
+`Envio ao Cliente — WhatsApp`.
+
+Os IDs de lista, os campos personalizados e seus valores possíveis estão em
+`references/clickup-fechamento-mensal.md` — **leia esse arquivo antes de
+consultar ou escrever no ClickUp**.
+
+Revise sempre **por cliente e por competência**, uma tarefa-mãe de cada vez.
+Não misture dados de clientes diferentes na mesma análise.
+
+## 6. Verificação de consistência do ClickUp (erros de automação)
+
+Além de revisar a apuração em si, confira se o **estado registrado no
+ClickUp bate com a realidade da apuração**. Uma tarefa sinalizada como
+feita sem que a obrigação esteja de fato correta e enviada é um erro de
+automação — e é exatamente o que esta verificação existe para pegar.
+
+Para a tarefa-mãe da competência, cruze:
+
+**Sinalizado como feito, mas sem lastro** (todos 🔴):
+- Subtarefa de obrigação (`PGDAS-D`, `DAS`, `DARF Previdenciário`)
+  concluída, mas sem `Anexo da Obrigação` preenchido → marcada feita sem o
+  documento.
+- `Status Nibo = Enviado`, mas `Protocolo Nibo` ou `Data Envio Nibo` vazio
+  → envio registrado sem comprovação.
+- Tarefa-mãe concluída (status `complete` ou `Concluída` marcada) com
+  subtarefas obrigatórias ainda em aberto.
+- `Validação de Fator R` concluída com `Percentual Fator R` vazio.
+
+**Estados contraditórios entre si** (🔴):
+- `Status Nibo = Erro` com a tarefa-mãe concluída → erro engolido pela
+  automação.
+- `Status OneFlow = Concluído` ou `Finalizado OneFlow = Sim`, mas
+  `Etapa Consolidada = Aguardando OneFlow` → campos dessincronizados.
+- `Concluída` marcada com `Etapa Consolidada` ≠ `Concluído`.
+- `Etapa do Fechamento` e `Etapa Consolidada` apontando fases
+  incompatíveis (ex.: `Enviado no Nibo` × `Documentos disponíveis`).
+
+**Dados da tarefa × dados da apuração** (🔴 quando diverge):
+- `Competência — Mês/Ano` (ou `Competência`) diferente da competência que
+  você está revisando → tarefa da competência errada.
+- `11. Regime Tributario` incompatível com a apuração revisada (ex.: campo
+  diz Lucro Presumido e a apuração é PGDAS).
+- `Percentual Fator R` do campo diferente do que você apurou, ou
+  incompatível com o Anexo aplicado (ex.: campo < 28% com Anexo III).
+- Duas tarefas-mãe com a mesma `Chave Técnica do Fechamento` ou mesmo
+  cliente + competência → falha de idempotência, duplicidade.
+
+**Sinais de alerta operacional** (🟡):
+- `Status Nibo = Parcial` ou `Pendente Envio` com prazo próximo.
+- `Prazo Vencimento` já vencido com `Alerta Prazo` ainda em
+  `Dentro do Prazo`/`Dentro da Meta` → alerta desatualizado.
+- `Origem da Geração = Teste` numa tarefa de produção.
+- `Tipo = Automação` com campos-chave vazios → automação rodou parcial.
+- `Perfil de Fechamento = Aguardando classificação` numa competência já em
+  envio.
+
+Reporte cada divergência dessas como uma exceção no painel, dizendo o que o
+ClickUp afirma, o que a apuração mostra, e qual dos dois está errado.
+
+## 7. Entrega estruturada no ClickUp
+
+A revisão não pode ficar só na conversa: o resultado vai para o responsável
+pela entrega, dentro do ClickUp. Use as ferramentas do MCP ClickUp
+(`clickup_get_task`, `clickup_filter_tasks`, `clickup_create_task_comment`,
+`clickup_update_task`, `clickup_find_member_by_name`).
+
+**Regra geral: comente na tarefa que já existe, não crie tarefa nova.** O
+fluxo já cria a tarefa-mãe do cliente/competência — duplicá-la quebra a
+idempotência do fechamento. Localize a tarefa-mãe pelo cliente e
+competência e poste o Painel Resumido como comentário via
+`clickup_create_task_comment`, começando por uma linha de veredito:
+
+```
+🟢 REVISÃO FISCAL — LIBERADO
+🟡 REVISÃO FISCAL — LIBERADO COM ALERTA (precisa de confirmação)
+🔴 REVISÃO FISCAL — BLOQUEADO — NÃO ENVIAR
+```
+
+Seguida do painel da seção 4 e das exceções, incluindo as divergências de
+ClickUp da seção 6.
+
+Ao comentar, atribua o comentário ao responsável pela entrega
+(`assignee`, resolvido via `clickup_find_member_by_name`) para que ele
+apareça na fila da pessoa.
+
+**Só crie tarefa nova** (`clickup_create_task`) se não existir tarefa-mãe
+para aquele cliente/competência — o que, por si só, já é um achado de erro
+de automação e deve ser relatado como tal.
+
+### O que você pode e não pode alterar
+
+Pode, quando o usuário pedir: atualizar campos de sinalização de revisão na
+tarefa (ex.: mover `Etapa do Fechamento` para `Revisar` num caso 🔴) e
+postar comentários.
+
+**Nunca**, em nenhuma hipótese:
+- marcar tarefa ou subtarefa como concluída;
+- preencher `Protocolo Nibo`, `Data Envio Nibo`, `Status Nibo = Enviado`
+  ou qualquer campo que afirme que uma obrigação foi entregue;
+- enviar guia, declaração ou mensagem ao cliente.
+
+Seu papel termina no veredito. A liberação e o envio são decisão e ação do
+responsável humano.
